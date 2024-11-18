@@ -6,20 +6,35 @@ import json
 from keras.models import load_model
 from keras.preprocessing.image import load_img, img_to_array
 from matplotlib import pyplot as plt
-from google.colab import files
+import tempfile
+import gdown
 
-# Paths for Colorization Model
-MODEL_DIR = '/content/drive/MyDrive/colorization_models'
-PROTOTXT = os.path.join(MODEL_DIR, 'colorization_deploy_v2.prototxt')
-POINTS = os.path.join(MODEL_DIR, 'pts_in_hull.npy')
-COLORIZATION_MODEL = os.path.join(MODEL_DIR, 'colorization_release_v2.caffemodel')
+# Streamlit App Interface
+st.title("Historical Image Restoration & Monument Prediction")
 
-# Paths for Historical Monument Model
-MONUMENT_MODEL_PATH = '/content/drive/MyDrive/indian_monuments_model.h5'
-IMAGE_SIZE = (150, 150)  # Same as used in training the classification model
+# Function to download files from Google Drive using gdown
+def download_from_drive(file_url, output_path):
+    gdown.download(file_url, output_path, quiet=False)
+
+# Paths for Historical Monument Model (adjust to direct file URL for gdown or manual download)
+MONUMENT_MODEL_PATH = 'indian_monuments_model.h5'
+CLASS_INDICES_PATH = 'class_indices.json'
+
+# Download the models if they're not already available locally
+if not os.path.exists(MONUMENT_MODEL_PATH):
+    download_from_drive("https://drive.google.com/uc?export=download&id=your_monument_model_file_id", MONUMENT_MODEL_PATH)
+
+if not os.path.exists(CLASS_INDICES_PATH):
+    download_from_drive("https://drive.google.com/uc?export=download&id=your_class_indices_file_id", CLASS_INDICES_PATH)
 
 # Load the historical monument classification model
 monument_model = load_model(MONUMENT_MODEL_PATH)
+
+# Paths for Colorization Model (adjust to direct file URL for gdown or manual download)
+MODEL_DIR = 'colorization_models'
+PROTOTXT = os.path.join(MODEL_DIR, 'colorization_deploy_v2.prototxt')
+POINTS = os.path.join(MODEL_DIR, 'pts_in_hull.npy')
+COLORIZATION_MODEL = os.path.join(MODEL_DIR, 'colorization_release_v2.caffemodel')
 
 # Function to load the colorization model
 def load_colorization_model():
@@ -69,10 +84,8 @@ def inpaint_image(image, mask):
     return cv2.inpaint(image, mask, 3, cv2.INPAINT_TELEA)
 
 # Function to predict the monument in the image
-def predict_image(image_path, model, class_indices):
-    # Load and preprocess the image
-    img = load_img(image_path, target_size=IMAGE_SIZE)
-    img_array = img_to_array(img) / 255.0  # Normalize the image
+def predict_image(image, model, class_indices):
+    img_array = img_to_array(image) / 255.0  # Normalize the image
     img_array = np.expand_dims(img_array, axis=0)  # Add batch dimension
 
     # Predict the class
@@ -87,15 +100,11 @@ def predict_image(image_path, model, class_indices):
         predicted_class_label = "Unknown"
         confidence = 0.0
 
-    # Display the image and result
-    st.image(img, caption=f"Predicted: {predicted_class_label} ({confidence * 100:.2f}%)")
-
+    # Display the result
+    st.image(image, caption=f"Predicted: {predicted_class_label} ({confidence * 100:.2f}%)")
     return predicted_class_label, confidence
 
-# Streamlit App Interface
-st.title("Historical Image Restoration & Monument Prediction")
-
-# File uploader
+# Streamlit File Upload and Operations
 uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 
 if uploaded_file:
@@ -116,10 +125,9 @@ if uploaded_file:
             colorized_image = colorize_image(image)
             st.image(colorized_image, caption="Colorized Image", channels="BGR")
             if st.button("Predict Monument in Colorized Image"):
-                model = load_model('/content/drive/MyDrive/indian_monuments_model.h5')
-                with open('/content/drive/MyDrive/class_indices.json', 'r') as f:
+                with open(CLASS_INDICES_PATH, 'r') as f:
                     class_indices = json.load(f)
-                label, confidence = predict_image("colorized_image.jpg", model, class_indices)
+                label, confidence = predict_image(colorized_image, monument_model, class_indices)
                 st.write(f"Predicted Monument: {label}, Confidence: {confidence * 100:.2f}%")
 
         elif operation == "Reduce Noise":
@@ -133,8 +141,7 @@ if uploaded_file:
             st.image(inpainted_image, caption="Inpainted Image", channels="BGR")
 
         elif operation == "Predict Monument":
-            model = load_model('/content/drive/MyDrive/indian_monuments_model.h5')
-            with open('/content/drive/MyDrive/class_indices.json', 'r') as f:
+            with open(CLASS_INDICES_PATH, 'r') as f:
                 class_indices = json.load(f)
-            label, confidence = predict_image(uploaded_file, model, class_indices)
+            label, confidence = predict_image(image, monument_model, class_indices)
             st.write(f"Predicted Monument: {label}, Confidence: {confidence * 100:.2f}%")
