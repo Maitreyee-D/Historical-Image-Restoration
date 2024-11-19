@@ -6,5 +6,6 @@ numpy
 Pillow
 matplotlib
 opencv-contrib-python
+tensorflow
 
 
