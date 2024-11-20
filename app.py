@@ -3,34 +3,27 @@ import os
 import numpy as np
 import cv2
 import json
-from keras.models import load_model
-from keras.preprocessing.image import load_img, img_to_array
+from tensorflow.keras.models import load_model
+from tensorflow.keras.preprocessing.image import load_img, img_to_array
+
 from matplotlib import pyplot as plt
 import tempfile
 import gdown
 
+
 # Streamlit App Interface
 st.title("Historical Image Restoration & Monument Prediction")
 
-# Function to download files from Google Drive using gdown
-def download_from_drive(file_url, output_path):
-    gdown.download(file_url, output_path, quiet=False)
-
-# Paths for Historical Monument Model (adjust to direct file URL for gdown or manual download)
+# Paths for Historical Monument Model and Class Indices (these are stored in the same directory as app.py)
 MONUMENT_MODEL_PATH = 'indian_monuments_model.h5'
 CLASS_INDICES_PATH = 'class_indices.json'
 
-# Download the models if they're not already available locally
-if not os.path.exists(MONUMENT_MODEL_PATH):
-    download_from_drive("https://drive.google.com/uc?export=download&id=your_monument_model_file_id", MONUMENT_MODEL_PATH)
-
-if not os.path.exists(CLASS_INDICES_PATH):
-    download_from_drive("https://drive.google.com/uc?export=download&id=your_class_indices_file_id", CLASS_INDICES_PATH)
-
 # Load the historical monument classification model
 monument_model = load_model(MONUMENT_MODEL_PATH)
+monument_model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+monument_model.save('indian_monuments_model.h5')
 
-# Paths for Colorization Model (adjust to direct file URL for gdown or manual download)
+# Paths for Colorization Model (located in the /colorization_models directory)
 MODEL_DIR = 'colorization_models'
 PROTOTXT = os.path.join(MODEL_DIR, 'colorization_deploy_v2.prototxt')
 POINTS = os.path.join(MODEL_DIR, 'pts_in_hull.npy')
@@ -67,7 +60,7 @@ def colorize_image(image):
 # Function to reduce noise in an image
 def reduce_noise(image, method="gaussian"):
     if method == "gaussian":
-        return cv2.GaussianBlur(image, (5, 5), 0)
+        return cv2.GaussianBlur(image, ( 5, 5), 0)
     elif method == "median":
         return cv2.medianBlur(image, 5)
     else:
@@ -83,10 +76,21 @@ def generate_mask(image):
 def inpaint_image(image, mask):
     return cv2.inpaint(image, mask, 3, cv2.INPAINT_TELEA)
 
+# Function to preprocess the image for model input
+def preprocess_image(image, model, target_size=None):
+    # If target size is None, fetch model's input shape
+    if target_size is None:
+        target_size = model.input_shape[1:3]  # (height, width) from the model input shape
+    # Resize the image to match the model's expected input size
+    image_resized = cv2.resize(image, target_size)
+    img_array = img_to_array(image_resized) / 255.0  # Normalize the image
+    img_array = np.expand_dims(img_array, axis=0)  # Add batch dimension
+    return img_array
+
 # Function to predict the monument in the image
 def predict_image(image, model, class_indices):
-    img_array = img_to_array(image) / 255.0  # Normalize the image
-    img_array = np.expand_dims(img_array, axis=0)  # Add batch dimension
+    # Preprocess the image with dynamic resizing based on model's input shape
+    img_array = preprocess_image(image, model)  # Dynamic target size fetching
 
     # Predict the class
     predictions = model.predict(img_array)
@@ -103,6 +107,7 @@ def predict_image(image, model, class_indices):
     # Display the result
     st.image(image, caption=f"Predicted: {predicted_class_label} ({confidence * 100:.2f}%)")
     return predicted_class_label, confidence
+
 
 # Streamlit File Upload and Operations
 uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
